@@ -1,24 +1,47 @@
 extern crate walkdir;
-use std::{env, process::Command};
+extern crate crypto;
+extern crate rustc_serialize;
 
-fn main() {
+use std::process::Command;
+use std::env;
+use std::process::Stdio;
+use crypto::md5::Md5;
+use crypto::digest::Digest;
+use std::fs::File;
+use std::io::prelude::*;
+use rustc_serialize::hex::ToHex;
+use rayon::iter::IntoParallelRefIterator;
+use walkdir::WalkDir;
+
+fn main(){
     let mut hashcat = String::from("");
+    let mut output;
+
     for arg in env::args().skip(1) {
-        for entry in walkdir::WalkDir::new(arg)
-            .into_iter()
-            .filter_map(Result::ok)
-            .filter(|e| !e.file_type().is_dir())
-        {
-            let mut p =entry.path().to_string_lossy();
-            let mut cmd = Command::new("sh");
-            cmd.arg("-c").arg(format!("md5sum \"{}\"", p));
-            let mut output = String::from_utf8_lossy(&cmd.output().unwrap().stdout).to_string();
-            let mut vec: Vec<&str> = output.split(" ").collect();
-            hashcat += vec[0];
+        for x in WalkDir::new(arg).into_iter().filter_map(Result::ok).filter(|e| !e.file_type().is_dir()) {
+            output = Command::new("md5sum")
+                .arg(x.path().display().to_string())
+                .output()
+                .expect("failed to execute process");
+            for e in String::from_utf8_lossy(&output.stdout).to_string().split_whitespace().next(){
+                hashcat = format!("{}{}", hashcat, e.to_string());
+            }
         }
     }
-    let mut cmd = Command::new("sh");
-    cmd.arg("-c").arg(format!("echo \"{}\" | md5sum", hashcat));
-    let output = String::from_utf8_lossy(&cmd.output().unwrap().stdout).to_string();
-    print!("{}", output);
+
+    print!("{}",
+           String::from_utf8_lossy(
+               &Command::new("md5sum")
+                   .stdin(
+                       Command::new("echo")
+                           .arg(hashcat)
+                           .stdout(Stdio::piped())
+                           .spawn()
+                           .expect("failed to execute process")
+                           .stdout.unwrap()
+                   )
+                   .output()
+                   .expect("failed to execute process").stdout
+           ).to_string()
+    );
 }
